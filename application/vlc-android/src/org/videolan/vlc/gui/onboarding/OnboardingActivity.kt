@@ -11,6 +11,8 @@ import android.widget.Button
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
 import androidx.core.app.ActivityCompat
 import androidx.core.content.edit
 import androidx.core.view.ViewCompat
@@ -81,6 +83,7 @@ class OnboardingActivity : AppCompatActivity(), OnboardingFragmentListener {
             FragmentName.NOTIFICATION_PERMISSION -> OnboardingNotificationPermissionFragment.newInstance()
             FragmentName.THEME -> OnboardingThemeFragment.newInstance()
         }
+        AppCompatDelegate.setDefaultNightMode(if (fragmentName == FragmentName.SCAN) MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         (fragment as OnboardingFragment).onboardingFragmentListener = this
         supportFragmentManager.commit {
             if (!backward) setCustomAnimations(
@@ -108,6 +111,7 @@ class OnboardingActivity : AppCompatActivity(), OnboardingFragmentListener {
     }
 
     override fun onDone() {
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         setResult(RESULT_RESTART)
         Settings.getInstance(this).edit {
             putInt(PREF_FIRST_RUN, BuildConfig.VLC_VERSION_CODE)
