@@ -32,9 +32,9 @@ jobs:
       - name: Compile libvlc (arm64 + armv7a)
         run: |
           # 编译 arm64 动态库（含默认插件）
-          ./buildsystem/compile.sh -a arm64 -s $ANDROID_NDK  --enable-shared --disable-static --enable-https
+          ./buildsystem/compile.sh -a arm64 -s $ANDROID_NDK  -l -vlc4
           # 编译 armv7a 动态库
-          ./buildsystem/compile.sh -a armv7a -s $ANDROID_NDK --enable-shared --disable-static --enable-https
+          ./buildsystem/compile.sh -a armv7a -s $ANDROID_NDK -l -vlc4
 
       - name: Package build artifacts
         run: |
