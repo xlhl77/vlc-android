@@ -1,41 +1,126 @@
-name: Compile libvlc for Android
+# .github/workflows/vlc-android-build.yml
+name: VLC for Android 编译
+
+# 触发条件：push到main分支、PR、手动触发
 on:
-  push:
-    branches: [ master ]  # 推送代码到 main 分支触发编译
-  workflow_dispatch:  # 支持手动触发编译
+  workflow_dispatch: # 手动触发
 
+# 作业配置
 jobs:
-  build:
-    runs-on: ubuntu-22.04  # 选用兼容的 Ubuntu 版本
+  build-vlc-android:
+    runs-on: ubuntu-latest # 基于Ubuntu最新版编译（Android编译推荐Linux环境）
+    timeout-minutes: 120 # VLC编译耗时较长，延长超时时间
+
+    env:
+      # 核心环境变量（适配VLC编译的命名规范）
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk # SDK存放路径
+      ANDROID_NDK_HOME: ${{ github.workspace }}/android-ndk # NDK存放路径
+      VLC_ANDROID_BRANCH: master # VLC for Android分支（可根据需求修改）
+      # 关键版本（VLC官方推荐的NDK/SDK版本，需匹配源码要求）
+      NDK_VERSION: 25.2.9519653 # VLC适配的稳定NDK版本（25b）
+      SDK_PLATFORM_VERSION: 33 # Android 13 SDK（VLC兼容版本）
+      BUILD_TOOLS_VERSION: 33.0.2 # 对应SDK的build-tools版本
+
     steps:
-      - name: Checkout code
+      # 步骤1：检出GitHub Actions运行环境
+      - name: 检出环境
         uses: actions/checkout@v4
+
+      # 步骤2：缓存SDK/NDK/依赖（减少重复下载，加速编译）
+      - name: 缓存Android SDK/NDK
+        uses: actions/cache@v3
         with:
-          submodules: recursive  # 递归拉取子模块
+          path:
+            - ${{ env.ANDROID_SDK_ROOT }}
+            - ${{ env.ANDROID_NDK_HOME }}
+            - ${{ github.workspace }}/vlc-android/extras
+          key: ${{ runner.os }}-android-${{ env.NDK_VERSION }}-${{ env.SDK_PLATFORM_VERSION }}
+          restore-keys: |
+            ${{ runner.os }}-android-
 
-      - name: Install dependencies
+      # 步骤3：安装系统依赖（VLC编译必需）
+      - name: 安装系统编译依赖
         run: |
-          sudo apt update
-          sudo apt install -y build-essential git pkg-config automake autoconf libtool patch wget unzip openjdk-11-jdk
+          sudo apt update && sudo apt install -y \
+            build-essential \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            git \
+            wget \
+            unzip \
+            python3 \
+            python3-pip \
+            openjdk-17-jdk \
+            ant \
+            cmake \
+            ninja-build \
+            texinfo \
+            yasm \
+            nasm \
+            libssl-dev \
+            libffi-dev \
+            libxml2-dev \
+            libxslt1-dev
+          # 确认Java环境
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
 
-      - name: Download Android NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r25c  # 推荐兼容版本
-          add-to-path: true
-
-      - name: Set environment variables
+      # 步骤4：下载并配置Android SDK
+      - name: 下载Android SDK
         run: |
-          echo "JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64" >> $GITHUB_ENV
-          echo "ANDROID_NDK=$ANDROID_NDK_ROOT" >> $GITHUB_ENV
+          # 创建SDK目录
+          mkdir -p $ANDROID_SDK_ROOT
+          cd $ANDROID_SDK_ROOT
+          # 下载SDK Commandline Tools（无UI版）
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip -O sdk-tools.zip
+          unzip -q sdk-tools.zip -d cmdline-tools
+          # 重命名目录（适配sdkmanager路径要求）
+          mv cmdline-tools/cmdline-tools cmdline-tools/latest
+          # 配置SDK环境变量
+          echo "PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH" >> $GITHUB_ENV
+          # 接受SDK许可（自动确认）
+          yes | sdkmanager --licenses
+          # 下载SDK核心组件
+          sdkmanager "platform-tools" "build-tools;$BUILD_TOOLS_VERSION" "platforms;android-$SDK_PLATFORM_VERSION"
 
-      - name: Compile libvlc (arm64 + armv7a)
+      # 步骤5：下载并配置Android NDK
+      - name: 下载Android NDK
         run: |
-          # 编译 arm64 动态库（含默认插件）
-          ./buildsystem/compile.sh -a arm64 -s $ANDROID_NDK  -l -vlc4
-          # 编译 armv7a 动态库
-          ./buildsystem/compile.sh -a armv7a -s $ANDROID_NDK -l -vlc4
+          # 创建NDK目录
+          mkdir -p $ANDROID_NDK_HOME
+          cd $ANDROID_NDK_HOME
+          # 下载指定版本NDK
+          wget -q https://dl.google.com/android/repository/android-ndk-$NDK_VERSION-linux.zip -O ndk.zip
+          unzip -q ndk.zip -d .
+          # 解压后NDK在子目录，移动到根目录
+          mv android-ndk-$NDK_VERSION/* .
+          # 配置VLC编译所需的NDK/SDK环境变量
+          echo "ANDROID_NDK=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          # 验证NDK/SDK路径
+          echo "NDK路径: $ANDROID_NDK_HOME"
+          echo "SDK路径: $ANDROID_SDK_ROOT"
+          $ANDROID_NDK_HOME/ndk-build --version
 
+      # 步骤6：克隆VLC for Android源码（含子模块）
+      - name: 克隆VLC for Android源码
+        run: |
+          git clone --depth 1 --branch $VLC_ANDROID_BRANCH https://code.videolan.org/videolan/vlc-android.git
+          cd vlc-android
+          # 拉取所有子模块（VLC依赖大量子模块，必须执行）
+          git submodule update --init --recursive
+
+      # 步骤7：配置VLC编译环境
+      - name: 配置VLC编译参数
+        run: |
+          cd vlc-android
+          # 给编译脚本加执行权限
+          chmod +x ./buildsystem/compile.sh
+          # 生成编译配置（指定NDK/SDK路径，适配所有ABI）
+          ./buildsystem/compile.sh -a arm64 --ndk=$ANDROID_NDK_HOME --sdk=$ANDROID_SDK_ROOT
+          ./buildsystem/compile.sh -a armv7a --ndk=$ANDROID_NDK_HOME --sdk=$ANDROID_SDK_ROOT
       - name: Package build artifacts
         run: |
           mkdir -p libvlc-output/arm64
@@ -50,3 +135,7 @@ jobs:
         with:
           name: libvlc-android-artifacts
           path: libvlc-output/  # 上传产物目录
+          path: libvlc-output/
+            vlc-android/libs/**/*.so
+            vlc-android/build/outputs/apk/**/*.apk
+          retention-days: 7 # 产物保留7天（可按需修改）
