@@ -135,7 +135,3 @@ jobs:
         with:
           name: libvlc-android-artifacts
           path: libvlc-output/  # 上传产物目录
-          path: libvlc-output/
-            vlc-android/libs/**/*.so
-            vlc-android/build/outputs/apk/**/*.apk
-          retention-days: 7 # 产物保留7天（可按需修改）
