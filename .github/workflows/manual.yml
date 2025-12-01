@@ -1,0 +1,52 @@
+name: Compile libvlc for Android
+on:
+  push:
+    branches: [ master ]  # 推送代码到 main 分支触发编译
+  workflow_dispatch:  # 支持手动触发编译
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04  # 选用兼容的 Ubuntu 版本
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive  # 递归拉取子模块
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential git pkg-config automake autoconf libtool patch wget unzip openjdk-11-jdk
+
+      - name: Download Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c  # 推荐兼容版本
+          add-to-path: true
+
+      - name: Set environment variables
+        run: |
+          echo "JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64" >> $GITHUB_ENV
+          echo "ANDROID_NDK=$ANDROID_NDK_ROOT" >> $GITHUB_ENV
+
+      - name: Compile libvlc (arm64 + armv7a)
+        run: |
+          # 编译 arm64 动态库（含默认插件）
+          ./compile.sh -a arm64 -s $ANDROID_NDK -j4 --enable-shared --disable-static --enable-https
+          # 编译 armv7a 动态库
+          ./compile.sh -a armv7a -s $ANDROID_NDK -j4 --enable-shared --disable-static --enable-https
+
+      - name: Package build artifacts
+        run: |
+          mkdir -p libvlc-output/arm64
+          mkdir -p libvlc-output/armv7a
+          cp -r build/arm64/lib/.libs/* libvlc-output/arm64/
+          cp -r build/armv7a/lib/.libs/* libvlc-output/armv7a/
+          cp -r build/arm64/lib/vlc/plugins libvlc-output/arm64/  # 复制动态插件
+          cp -r build/armv7a/lib/vlc/plugins libvlc-output/armv7a/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: libvlc-android-artifacts
+          path: libvlc-output/  # 上传产物目录
